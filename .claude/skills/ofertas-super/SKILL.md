@@ -25,7 +25,8 @@ Forma del documento (lo escribe el formulario del artifact):
 
 ```json
 {
-  "direccion": "Av. San Martín 5900, Villa Devoto",
+  "direccion": "Av. San Martín 5900, Villa Devoto, CABA",   // armada por el formulario con los 3 campos de abajo
+  "calle": "Av. San Martín 5900", "localidad": "Villa Devoto", "provincia": "CABA",
   "lat": -34.60, "lon": -58.51,          // null hasta que la skill geocodifica
   "radio_km": 2,
   "cadenas": ["dia", "carrefour", "coto", "jumbo", "disco", "vea", "changomas"],  // vacío = todas

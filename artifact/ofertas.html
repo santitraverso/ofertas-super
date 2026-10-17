@@ -139,7 +139,7 @@ legend { font: 700 20px/1.1 var(--f-display); text-transform: uppercase; letter-
 .campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
 .hint { font-weight: 400; color: var(--muted); font-size: 12px; }
-input[type=text], input[type=number], textarea {
+input[type=text], input[type=number], textarea, select {
   font: inherit; font-size: 15px; color: var(--ink); background: var(--surface);
   border: 1px solid var(--line); border-radius: 4px; padding: 8px 10px; width: 100%;
 }
@@ -190,6 +190,19 @@ input:disabled, textarea:disabled { opacity: 0.7; }
 const CADENAS = [
   ["dia", "Día"], ["carrefour", "Carrefour"], ["coto", "Coto"], ["jumbo", "Jumbo"],
   ["disco", "Disco"], ["vea", "Vea"], ["changomas", "ChangoMás"]
+];
+// Sugerencias para "Barrio o localidad": los 48 barrios porteños y localidades del conurbano.
+const BARRIOS = [
+  "Agronomía", "Almagro", "Balvanera", "Barracas", "Belgrano", "Boedo", "Caballito", "Chacarita", "Coghlan",
+  "Colegiales", "Constitución", "Flores", "Floresta", "La Boca", "La Paternal", "Liniers", "Mataderos",
+  "Monte Castro", "Monserrat", "Nueva Pompeya", "Núñez", "Palermo", "Parque Avellaneda", "Parque Chacabuco",
+  "Parque Chas", "Parque Patricios", "Puerto Madero", "Recoleta", "Retiro", "Saavedra", "San Cristóbal",
+  "San Nicolás", "San Telmo", "Vélez Sarsfield", "Versalles", "Villa Crespo", "Villa del Parque", "Villa Devoto",
+  "Villa General Mitre", "Villa Lugano", "Villa Luro", "Villa Ortúzar", "Villa Pueyrredón", "Villa Real",
+  "Villa Riachuelo", "Villa Santa Rita", "Villa Soldati", "Villa Urquiza",
+  "Avellaneda", "Banfield", "Bernal", "Caseros", "Castelar", "Florida", "Haedo", "Hurlingham", "Ituzaingó",
+  "Lanús", "Lomas de Zamora", "Martínez", "Merlo", "Morón", "Munro", "Olivos", "Quilmes", "Ramos Mejía",
+  "San Fernando", "San Isidro", "San Justo", "San Martín", "San Miguel", "Tigre", "Vicente López", "Villa Ballester"
 ];
 const state = { db: null, canWrite: null, config: null, configLoaded: false, corridas: [], corridasLoaded: false, elegida: null, error: null };
 
@@ -370,10 +383,27 @@ function renderHistorial() {
 // ---------- Preferencias ----------
 let borrador = null;
 function nuevoId() { return "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+// Corta "Leche, Manteca; Huevos" (o varias líneas pegadas) en un producto por parte.
+function partirProductos(texto) {
+  return String(texto || "").split(/[,;\n]+/).map(s => s.trim()).filter(Boolean);
+}
+function componerDireccion(b) {
+  return [b.calle.trim(), b.localidad.trim(), b.provincia].filter(Boolean).join(", ");
+}
 function desdeConfig(cfg) {
   cfg = cfg || {};
+  // Configs viejas solo tienen "direccion": se reparte en calle / localidad / provincia.
+  let calle = cfg.calle || "", localidad = cfg.localidad || "", provincia = cfg.provincia || "";
+  if (!calle && cfg.direccion) {
+    const partes = cfg.direccion.split(",").map(s => s.trim()).filter(Boolean);
+    calle = partes[0] || "";
+    localidad = partes[1] || "";
+    const p = (partes[2] || "").toLowerCase();
+    provincia = p.includes("caba") || p.includes("capital") || p.includes("ciudad") ? "CABA" : p ? "Provincia de Buenos Aires" : "";
+  }
   return {
-    direccion: cfg.direccion || "", lat: cfg.lat ?? "", lon: cfg.lon ?? "", radio_km: cfg.radio_km ?? 2,
+    calle, localidad, provincia: provincia || "CABA",
+    lat: cfg.lat ?? "", lon: cfg.lon ?? "", radio_km: cfg.radio_km ?? 2,
     cadenas: Array.isArray(cfg.cadenas) ? cfg.cadenas.slice() : [],
     tarjetas: (cfg.tarjetas || []).join("\n"), billeteras: (cfg.billeteras || []).join("\n"),
     lista: (cfg.lista || []).map(x => ({ ...x, eans: (x.eans || []).slice() })),
@@ -398,31 +428,60 @@ function renderPreferencias() {
       lista.append(h("div", { class: "prod" },
         h("input", { type: "text", id: "prod-" + it.id, value: it.nombre, "aria-label": "Producto", disabled: dis,
           oninput: (e) => { it.nombre = e.target.value; } ,
-          onchange: () => { it.eans = []; it.resuelto_como = ""; pintarLista(); } }),
+          onchange: () => {
+            const partes = partirProductos(it.nombre);
+            if (partes.length > 1) {
+              b.lista.splice(i, 1, ...partes.map((n, j) => ({ id: j === 0 ? it.id : nuevoId(), nombre: n, marca_fija: it.marca_fija, eans: [] })));
+            } else { it.eans = []; it.resuelto_como = ""; }
+            pintarLista();
+          } }),
         h("label", { class: "marca" }, h("input", { type: "checkbox", id: "marca-" + it.id, checked: it.marca_fija || null, disabled: dis, onchange: (e) => { it.marca_fija = e.target.checked; } }), "Solo esta marca"),
         soloLectura ? h("span") : h("button", { type: "button", class: "btn mini", "aria-label": "Quitar " + it.nombre, onclick: () => { b.lista.splice(i, 1); pintarLista(); } }, "Quitar"),
         h("div", { class: "estado" }, resuelto ? "Se compara por " + resuelto + " código" + (resuelto > 1 ? "s" : "") + (it.resuelto_como ? ": " + it.resuelto_como : "") : "La próxima corrida busca los códigos de barras de este producto.")));
     });
   }
   pintarLista();
-  const nuevo = h("input", { type: "text", id: "prod-nuevo", placeholder: "Agregar producto, ej. Leche La Serenísima entera 1L", disabled: dis });
+  const nuevo = h("input", { type: "text", id: "prod-nuevo", placeholder: "Agregar productos, ej. Leche entera 1L, Yerba Playadito 1kg", disabled: dis });
+  const avisoLista = h("span", { class: "hint", role: "status" });
   function agregar() {
-    const v = nuevo.value.trim(); if (!v) return;
-    b.lista.push({ id: nuevoId(), nombre: v, marca_fija: false, eans: [] });
+    const partes = partirProductos(nuevo.value); if (!partes.length) return;
+    for (const n of partes) b.lista.push({ id: nuevoId(), nombre: n, marca_fija: false, eans: [] });
+    avisoLista.textContent = partes.length > 1 ? "Agregados " + partes.length + " productos por separado." : "";
     nuevo.value = ""; pintarLista(); nuevo.focus();
   }
+  // Pegar varias líneas en el campo: se agregan directo como productos separados.
+  nuevo.addEventListener("paste", (e) => {
+    const t = (e.clipboardData || window.clipboardData)?.getData("text") || "";
+    if (/\n/.test(t.trim())) { e.preventDefault(); nuevo.value = t; agregar(); }
+  });
   nuevo.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); agregar(); } });
 
+  const dirPrevia = h("p", { class: "hint", style: "grid-column: 1 / -1; margin: 0" });
+  function previa() {
+    const d = componerDireccion(b);
+    dirPrevia.textContent = b.calle.trim() ? "La skill va a buscar: " + d : "";
+  }
+  previa();
+  const barrios = h("datalist", { id: "barrios" }, BARRIOS.map(n => h("option", { value: n })));
   const estado = h("span", { class: "estado-guardado muted", role: "status" });
   const form = h("form", { onsubmit: async (e) => {
     e.preventDefault();
     const original = state.config || {};
-    const dirCambio = b.direccion.trim() !== (original.direccion || "");
+    if (b.calle.trim() && !b.localidad.trim()) {
+      estado.textContent = "Completá el barrio o la localidad: hay calles con el mismo nombre en distintas ciudades.";
+      estado.style.color = "var(--oferta)"; document.getElementById("localidad").focus(); return;
+    }
+    if (b.calle.trim() && !/\d/.test(b.calle)) {
+      estado.textContent = "Agregá la altura a la calle (ej. La Pampa 3993) para medir bien las distancias.";
+      estado.style.color = "var(--oferta)"; document.getElementById("calle").focus(); return;
+    }
+    const direccion = componerDireccion(b);
+    const dirCambio = direccion !== (original.direccion || "");
     const latLonIgual = String(b.lat) === String(original.lat ?? "") && String(b.lon) === String(original.lon ?? "");
     const lineas = (s) => s.split("\n").map(x => x.trim()).filter(Boolean);
     const num = (v) => v === "" || v == null || isNaN(Number(v)) ? null : Number(v);
     const doc = {
-      direccion: b.direccion.trim(),
+      direccion, calle: b.calle.trim(), localidad: b.localidad.trim(), provincia: b.provincia,
       lat: dirCambio && latLonIgual ? null : num(b.lat),
       lon: dirCambio && latLonIgual ? null : num(b.lon),
       radio_km: num(b.radio_km) ?? 2,
@@ -447,8 +506,14 @@ function renderPreferencias() {
     soloLectura ? h("p", { class: "chip warn", style: "justify-self:start" }, "Solo lectura: solo quien edita el artifact puede cambiar las preferencias") : null,
     h("fieldset", null, h("legend", null, "Zona"),
       h("div", { class: "campos" },
-        h("label", { style: "grid-column: 1 / -1" }, "Dirección o barrio", h("span", { class: "hint" }, "Desde acá se miden las distancias a las sucursales"),
-          h("input", { type: "text", id: "direccion", value: b.direccion, placeholder: "ej. Av. San Martín 5900, Villa Devoto", disabled: dis, oninput: (e) => b.direccion = e.target.value })),
+        h("label", null, "Calle y altura", h("span", { class: "hint" }, "Desde acá se miden las distancias"),
+          h("input", { type: "text", id: "calle", value: b.calle, placeholder: "ej. La Pampa 3993", autocomplete: "address-line1", disabled: dis, oninput: (e) => { b.calle = e.target.value; previa(); } })),
+        h("label", null, "Barrio o localidad", h("span", { class: "hint" }, "Elegí de la lista o escribilo"),
+          h("input", { type: "text", id: "localidad", value: b.localidad, list: "barrios", placeholder: "ej. Villa Urquiza", autocomplete: "address-level2", disabled: dis, oninput: (e) => { b.localidad = e.target.value; previa(); } })),
+        h("label", null, "Provincia", h("span", { class: "hint" }, "Las fuentes cubren AMBA"),
+          h("select", { id: "provincia", disabled: dis, onchange: (e) => { b.provincia = e.target.value; previa(); } },
+            ["CABA", "Provincia de Buenos Aires"].map(p => h("option", { value: p, selected: b.provincia === p || null }, p)))),
+        dirPrevia,
         h("label", null, "Radio máximo (km)", h("input", { type: "number", id: "radio", min: "0.5", max: "30", step: "0.5", value: b.radio_km, disabled: dis, oninput: (e) => b.radio_km = e.target.value })),
         h("label", null, "Latitud", h("span", { class: "hint" }, "Opcional, la skill la calcula"), h("input", { type: "text", id: "lat", inputmode: "decimal", value: b.lat, disabled: dis, oninput: (e) => b.lat = e.target.value })),
         h("label", null, "Longitud", h("span", { class: "hint" }, "Opcional, la skill la calcula"), h("input", { type: "text", id: "lon", inputmode: "decimal", value: b.lon, disabled: dis, oninput: (e) => b.lon = e.target.value })))),
@@ -466,7 +531,10 @@ function renderPreferencias() {
     h("fieldset", null, h("legend", null, "Tu lista"),
       h("span", { class: "hint" }, "Lo que comprás seguido. Con \"Solo esta marca\" no se proponen reemplazos de otra marca."),
       lista,
-      soloLectura ? null : h("div", { class: "prod", style: "grid-template-columns: minmax(0,1fr) auto" }, nuevo, h("button", { type: "button", class: "btn sec mini", onclick: agregar }, "Agregar"))),
+      soloLectura ? null : h("div", { class: "prod", style: "grid-template-columns: minmax(0,1fr) auto" }, nuevo, h("button", { type: "button", class: "btn sec mini", onclick: agregar }, "Agregar")),
+      soloLectura ? null : h("span", { class: "hint" }, "Podés agregar varios de una vez separados por coma: se cargan como productos distintos."),
+      avisoLista),
+    barrios,
     h("fieldset", null, h("legend", null, "Notas para la skill"),
       h("label", null, h("span", { class: "hint" }, "Cualquier otra preferencia, ej. \"no me interesan mayoristas\""),
         h("textarea", { id: "notas", disabled: dis, oninput: (e) => b.notas = e.target.value }, b.notas))),
