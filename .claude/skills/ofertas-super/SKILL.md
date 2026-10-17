@@ -47,7 +47,10 @@ Si `lat`/`lon` son null, geocodificar la dirección:
 ```bash
 curl -s -A "ofertas-super-skill" "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=ar&q=<direccion urlencoded>"
 ```
-Guardar `lat`/`lon` en el doc. Si no hay resultado, avisar y usar solo precios online (VTEX).
+Usar `limit=3`: si hay varios resultados en localidades distintas (ej. "La Pampa 3993" existe en CABA, Mar del Plata y Olavarría), en modo interactivo preguntar cuál y en modo rutina no adivinar: avisar que falta la localidad. Guardar `lat`/`lon` y la dirección con barrio/localidad en el doc. Si no hay resultado, avisar y usar solo precios online (VTEX).
+
+### 1a'. Lista
+Si un item trae varios productos separados por comas ("Leche, Manteca, Huevos"), partirlo en un item por producto antes de resolver EANs y guardar la lista partida.
 
 ### 1b. Códigos de barras (EAN)
 SEPA describe los productos con textos truncados ("LECHE ZERO LACTOSA" / marca "SEREN"), así que **todo se cruza por EAN**. Para cada item de `lista` con `eans` vacío:
@@ -78,8 +81,10 @@ Comercios SEPA según `cadenas` (default todos):
 
 Columnas: `comercio bandera sucursal nombre direccion localidad dist_km ean descripcion marca precio_lista promo1_precio promo1_leyenda promo2_precio promo2_leyenda`.
 
-- Precio efectivo de una fila = `promo1_precio` si existe y está vigente, si no `precio_lista`.
-- Vigencia: buscar en la leyenda "hasta el dd/mm/aaaa" o "hasta dd/mm"; si la fecha es anterior a hoy, ignorar la promo. Si la leyenda no tiene fecha, mostrarla con "vigencia sin confirmar".
+- Precio efectivo de una fila = el menor entre `precio_lista`, `promo1_precio` y `promo2_precio`, contando solo promos vigentes. Mirar las dos promos: Día pone en `promo2` sus promos con fecha ("2DO AL 70% PH DH 30M - Vigencia: Desde el 14/10/2026 hasta el 19/10/2026").
+- Vigencia: la fecha de fin aparece como "hasta dd/mm/aaaa", "hasta el dd/mm/aaaa" (Carrefour, Día) o "AL dd/mm/aaaa" (Coto). Si es anterior a hoy, ignorar la promo. Si la leyenda no tiene fecha (Día: "Hasta Agotar Stock o Finalice Vigencia"), contarla pero con "vigencia sin confirmar".
+- Las promos tipo "2do al X%" vienen como precio unitario promedio llevando 2: aclararlo en `promo`.
+- Con radio grande hay cientos de sucursales: `donde_comprar` tiene que priorizar las cercanas (si una sucursal a menos de 1,5km cuesta hasta 2% más que la más barata, va primero).
 - Las promos de Día, Carrefour y Coto vienen en SEPA. Cencosud (Jumbo/Disco/Vea) y ChangoMás casi no informan promos ahí: para esas usar VTEX.
 - Si el script falla (exit 2), registrar `SEPA: falló` con el mensaje y seguir con VTEX.
 
