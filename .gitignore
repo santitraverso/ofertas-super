@@ -1,0 +1,10 @@
+# Datos descargados (SEPA pesa cientos de MB)
+data/
+*.zip
+*.csv
+
+# OS / tooling
+.DS_Store
+Thumbs.db
+.env
+.vscode/
