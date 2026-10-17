@@ -15,4 +15,4 @@ Skill de Claude Code que compara tu lista del súper entre las sucursales cercan
 3. Corré `/ofertas-super <url del artifact>` una vez a mano.
 4. Programá una rutina diaria con `/ofertas-super <url del artifact> — modo rutina`.
 
-Requiere `bash`, `curl`, `unzip` y `gawk`.
+Requiere `bash`, `curl`, `unzip` y `awk`.

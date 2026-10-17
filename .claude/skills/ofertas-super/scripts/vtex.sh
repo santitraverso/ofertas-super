@@ -28,21 +28,28 @@ host() {
 }
 
 # Parte la respuesta JSON por producto y saca los campos que importan (sin jq).
+# awk POSIX (sin extensiones de gawk): la nube trae mawk.
 parse() {
-  gawk -v cadena="$1" -v base="https://$2/" -v OFS='\t' '
-    function campo(s, re,   m) { return match(s, re, m) ? m[1] : "" }
-    BEGIN { RS = "\\{\"productId\":" }
+  sed 's/{"productId":/\n&/g' | awk -v cadena="$1" -v base="https://$2/" -v OFS='\t' '
+    # Valor de "clave": texto (t="s") o número (t="n"), primera aparición.
+    function campo(s, clave, t,   re, v) {
+      re = (t == "s") ? "\"" clave "\":\"[^\"]*\"" : "\"" clave "\":[0-9.]+"
+      if (!match(s, re)) return ""
+      v = substr(s, RSTART + length(clave) + 3, RLENGTH - length(clave) - 3)
+      return (t == "s") ? substr(v, 2, length(v) - 2) : v
+    }
     NR > 1 {
-      ean = campo($0, "\"ean\":\"([0-9]*)\"")
-      nombre = campo($0, "\"productName\":\"([^\"]*)\"")
-      marca = campo($0, "\"brand\":\"([^\"]*)\"")
-      precio = campo($0, "\"Price\":([0-9.]+)")
-      sindesc = campo($0, "\"PriceWithoutDiscount\":([0-9.]+)")
-      stock = campo($0, "\"AvailableQuantity\":([0-9]+)")
-      link = campo($0, "\"linkText\":\"([^\"]*)\"")
+      ean = campo($0, "ean", "s")
+      nombre = campo($0, "productName", "s")
+      marca = campo($0, "brand", "s")
+      precio = campo($0, "Price", "n")
+      sindesc = campo($0, "PriceWithoutDiscount", "n")
+      stock = campo($0, "AvailableQuantity", "n")
+      link = campo($0, "linkText", "s")
       dest = ""
-      if (match($0, /"clusterHighlights":\{([^}]*)\}/, m)) {
-        n = split(m[1], parts, /"[0-9]+":/)
+      if (match($0, /"clusterHighlights":\{[^}]*\}/)) {
+        m = substr($0, RSTART + 21, RLENGTH - 22)
+        n = split(m, parts, /"[0-9]+":/)
         for (i = 2; i <= n; i++) { v = parts[i]; gsub(/^"|",?$/, "", v); dest = dest (dest ? "; " : "") v }
       }
       print cadena, ean, nombre, marca, precio, sindesc, stock, dest, base link "/p"
@@ -59,7 +66,7 @@ case ${1:-} in
     for c in $(echo "${3:-dia,jumbo,disco,vea,changomas,carrefour}" | tr ',' ' '); do
       h=$(host "$c") || { printf '%s\tERROR\n' "$c"; continue; }
       r=$(pedir "$h" "fq=alternateIds_Ean:$ean") || { printf '%s\tERROR\n' "$c"; continue; }
-      printf '%s' "$r" | parse "$c" "$h" | gawk -F'\t' -v e="$ean" '$2 == e'
+      printf '%s' "$r" | parse "$c" "$h" | awk -F'\t' -v e="$ean" '$2 == e'
     done ;;
   buscar)
     c=${2:?cadena}; txt=${3:?texto}
